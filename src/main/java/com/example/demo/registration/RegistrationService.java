@@ -8,6 +8,7 @@ import com.example.demo.registration.token.ConfirmationToken;
 import com.example.demo.registration.token.ConfirmationTokenService;
 import lombok.AllArgsConstructor;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
 
@@ -35,13 +36,18 @@ public class RegistrationService {
                         AppUserRole.USER)
         );
         String link = "http://localhost:8080/api/v1/registration/confirm?token=" + token;
-        emailSender.send(request.getEmail(), buildEmail(request.getFirstName(), link));
+        emailSender.send(request.getEmail(), buildEmail(request.getEmail(), request.getFirstName(), link));
         return token;
     }
 
+    @Transactional
     public String confirmToken(String token) {
 
         ConfirmationToken confirmationToken = confirmationTokenService.getToken(token).orElseThrow(() -> new IllegalStateException("token not found"));
+
+        if(confirmationToken.getIsValid() == false){
+            throw new IllegalStateException("token is already invalid. Please confirm thru the latest activation email.");
+        }
 
         if(confirmationToken.getConfirmedAt() != null){
             throw new IllegalStateException("token already confirmed");
@@ -53,14 +59,33 @@ public class RegistrationService {
 
         confirmationTokenService.setConfirmedAt(token);
 
-        appUserService.enableAppUser(
-                confirmationToken.getAppUser().getEmail()
-        );
+        appUserService.enableAppUser(confirmationToken.getAppUser().getEmail());
 
         return "confirmed";
     }
 
-    private String buildEmail(String name, String link) {
+    @Transactional
+    public String resendConfirmationEmail(String email) {
+
+        AppUser appUser = appUserService.getAppUser(email).orElseThrow(() -> new IllegalStateException("User not found"));
+
+        if(appUser.getEnabled() == true) {
+            throw new IllegalStateException("User is already confirmed");
+        }
+
+        ConfirmationToken confirmationToken = confirmationTokenService.getTokenByUserId(appUser.getId()).orElseThrow(() -> new IllegalStateException("token not found for user."));
+
+        confirmationTokenService.setTokenToInvalid(confirmationToken.getToken());
+
+        String token = confirmationTokenService.saveConfirmationToken(appUser);
+        String link = "http://localhost:8080/api/v1/registration/confirm?token=" + token;
+        emailSender.send(email, buildEmail(email, appUser.getFirstName(), link));
+
+        return token;
+    }
+
+    private String buildEmail(String email, String name, String link) {
+        String reSendEmailLink = "http://localhost:8080/api/v1/registration/resendConfirmationEmail?email=" + email;
         return "<div style=\"font-family:Helvetica,Arial,sans-serif;font-size:16px;margin:0;color:#0b0c0c\">\n" +
                 "\n" +
                 "<span style=\"display:none;font-size:1px;color:#fff;max-height:0\"></span>\n" +
@@ -116,7 +141,7 @@ public class RegistrationService {
                 "      <td width=\"10\" valign=\"middle\"><br></td>\n" +
                 "      <td style=\"font-family:Helvetica,Arial,sans-serif;font-size:19px;line-height:1.315789474;max-width:560px\">\n" +
                 "        \n" +
-                "            <p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\">Hi " + name + ",</p><p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\"> Thank you for registering. Please click on the below link to activate your account: </p><blockquote style=\"Margin:0 0 20px 0;border-left:10px solid #b1b4b6;padding:15px 0 0.1px 15px;font-size:19px;line-height:25px\"><p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\"> <a href=\"" + link + "\">Activate Now</a> </p></blockquote>\n Link will expire in 15 minutes. <p>See you soon</p>" +
+                "            <p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\">Hi " + name + ",</p><p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\"> Thank you for registering. Please click on the below link to activate your account: </p><blockquote style=\"Margin:0 0 20px 0;border-left:10px solid #b1b4b6;padding:15px 0 0.1px 15px;font-size:19px;line-height:25px\"><p style=\"Margin:0 0 20px 0;font-size:19px;line-height:25px;color:#0b0c0c\"> <a href=\"" + link + "\">Activate Now</a> </p></blockquote>\n Link will expire in 15 minutes. <p>See you soon</p> <p><a href=\"" + reSendEmailLink + "\">Resend activation email</a></p> " +
                 "        \n" +
                 "      </td>\n" +
                 "      <td width=\"10\" valign=\"middle\"><br></td>\n" +
@@ -128,4 +153,5 @@ public class RegistrationService {
                 "\n" +
                 "</div></div>";
     }
+
 }

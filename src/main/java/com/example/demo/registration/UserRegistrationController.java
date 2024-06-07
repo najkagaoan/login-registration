@@ -20,4 +20,10 @@ public class UserRegistrationController {
         return registrationService.confirmToken(token);
 
     }
+
+    @GetMapping(path = "resendConfirmationEmail")
+    public String resendConfirmationEmail(@RequestParam("email") String email) {
+        return registrationService.resendConfirmationEmail(email);
+
+    }
 }

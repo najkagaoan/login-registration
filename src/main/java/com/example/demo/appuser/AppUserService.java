@@ -8,8 +8,10 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.time.LocalDateTime;
+import java.util.Optional;
 import java.util.UUID;
 
 @Service
@@ -27,6 +29,7 @@ public class AppUserService implements UserDetailsService {
                 .orElseThrow(() -> new UsernameNotFoundException(String.format(USER_NOT_FOUND_MSG, email)));
     }
 
+    @Transactional
     public String signUpUser(AppUser appUser){
         boolean userExists = appUserRepository.findByEmail(appUser.getEmail()).isPresent();
 
@@ -40,17 +43,14 @@ public class AppUserService implements UserDetailsService {
 
         appUserRepository.save(appUser);
 
-        String token = UUID.randomUUID().toString();
-        ConfirmationToken confirmationToken = new ConfirmationToken(token, LocalDateTime.now(), LocalDateTime.now().plusMinutes(15), appUser);
-
-        confirmationTokenService.saveConfirmationToken(confirmationToken);
-
-        // TODO: Send Email
-
-        return token;
+        return confirmationTokenService.saveConfirmationToken(appUser);
     }
 
     public void enableAppUser(String email) {
         appUserRepository.updateEnabled(email);
+    }
+
+    public Optional<AppUser> getAppUser(String email) {
+        return appUserRepository.findByEmail(email);
     }
 }
